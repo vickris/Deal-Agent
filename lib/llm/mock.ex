@@ -1,22 +1,24 @@
-defmodule Llm.Mock do
+defmodule LLM.Mock do
   @moduledoc """
   Mock implementation of the LLM client for testing purposes.
   """
 
-  @behaviour Llm.Client
+  @behaviour LLM.Client
 
   @impl true
   def chat(messages) do
-    # Simulate a response based on the input messages
-    case messages do
-      [%{role: :user, content: "Hello"}] ->
-        {:reply, "Hi there! How can I assist you today?"}
+    last =
+      List.last(messages)
 
-      [%{role: :user, content: "Call tool"}] ->
-        {:tool_call, :example_tool, %{param1: "value1", param2: "value2"}}
+    case last do
+      %{role: :user} ->
+        {:tool_call, :echo, %{text: last.content}}
+
+      %{role: :tool} ->
+        {:reply, "Done!"}
 
       _ ->
-        {:reply, "I'm not sure how to respond to that."}
+        {:reply, "I'm confused."}
     end
   end
 

@@ -1,4 +1,4 @@
-defmodule Llm.Client do
+defmodule LLM.Client do
   @moduledoc """
   Behaviour implemented by every LLM provider.
   """
