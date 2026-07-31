@@ -40,11 +40,17 @@ defmodule Agent.Loop do
   end
 
   defp step(state) do
+    state = trace(state, :model_call, %{messages: state.messages})
     case LLM.Mock.chat(state.messages) do
       {:reply, reply} ->
+        _state =
+          trace(state, :model_finished, %{
+            answer: reply
+          })
         {:ok, reply}
 
       {:tool_call, tool, args} ->
+        state = trace(state, :tool_requested, %{tool: tool, messages: state.messages})
         run_tool(state, tool, args)
     end
   end
@@ -63,11 +69,28 @@ defmodule Agent.Loop do
                   }
                 ]
         }
-
+        next_state =
+          trace(next_state, :tool_completed, %{
+            tool: tool,
+            result: result
+          })
         step(next_state)
 
       {:error, reason} ->
         {:error, reason}
     end
+  end
+
+  defp trace(state, type, payload) do
+    %{
+      state
+      | trace:
+          Agent.Trace.record(
+            state.trace,
+            state.iteration,
+            type,
+            payload
+          )
+    }
   end
 end
