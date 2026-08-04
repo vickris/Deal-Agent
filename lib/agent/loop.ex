@@ -22,18 +22,7 @@ defmodule Agent.Loop do
 
   @impl true
   def handle_call({:run, goal}, _from, _state) do
-    state = %State{
-      goal: goal,
-      status: :running,
-      iteration: 0,
-      messages: [
-        %{
-          role: :user,
-          content: goal
-        }
-      ],
-      trace: []
-    }
+    state = State.new(goal)
 
     case step(state) do
       {:ok, result, final_state} ->
@@ -45,27 +34,25 @@ defmodule Agent.Loop do
             {:reply, {:error, reason}, final_state}
         end
 
-
       {:error, reason, final_state} ->
         {:reply, {:error, reason}, final_state}
     end
   end
 
   defp step(state) do
-    state = trace(state, :model_call, %{messages: state.messages})
+    state = State.trace(state, :model_call, %{context: state.context})
 
-    case LLM.Mock.chat(state.messages) do
+    case LLM.Mock.chat(state.context.messages) do
       {:reply, reply} ->
         state =
           state
-          |> trace(:model_finished, %{
-            answer: reply
-          })
-          |> Map.put(:status, :finished)
+          |> State.trace(:model_finished, %{answer: reply})
+          |> State.finish(reply)
+
         {:ok, reply, state}
 
       {:tool_call, tool, args} ->
-        state = trace(state, :tool_requested, %{tool: tool, arguments: args})
+        state = State.trace(state, :tool_requested, %{tool: tool, arguments: args})
         run_tool(state, tool, args)
     end
   end
@@ -73,45 +60,17 @@ defmodule Agent.Loop do
   defp run_tool(state, tool, args) do
     case Tools.Registry.call(tool, args) do
       {:ok, result} ->
-        state = state
-        |> trace(:tool_completed, %{tool: tool, result: result})
-        |> append_tool_message(result)
+        state =
+          state
+          |> State.trace(:tool_completed, %{tool: tool, result: result})
+          |> State.add_tool_result(result)
+          |> State.increment_iteration()
 
         step(state)
 
       {:error, reason} ->
-        state =
-        trace(state, :tool_failed, %{
-          tool: tool,
-          reason: reason
-        })
-
+        state = State.trace(state, :tool_failed, %{tool: tool, reason: reason})
         {:error, reason, state}
     end
-  end
-
-  defp trace(state, type, payload) do
-    %{
-      state
-      | trace:
-          Agent.Trace.record(
-            state.trace,
-            state.iteration,
-            type,
-            payload
-          )
-    }
-  end
-
-  defp append_tool_message(state, result) do
-    tool_message = %{
-      role: :tool,
-      content: result
-    }
-
-    %{
-      state
-      | messages: state.messages ++ [tool_message]
-    }
   end
 end
