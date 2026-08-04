@@ -6,8 +6,9 @@ defmodule Agent.Loop do
   use GenServer
   alias Agent.State
 
-  def start_link(initial_state \\ []) do
-    GenServer.start_link(__MODULE__, initial_state, name: __MODULE__)
+  def start_link(opts \\ []) do
+    llm = Keyword.fetch!(opts, :llm)
+    GenServer.start_link(__MODULE__, llm, name: __MODULE__)
   end
 
   @impl true
@@ -34,23 +35,37 @@ defmodule Agent.Loop do
       trace: []
     }
 
-    result = step(state)
+    case step(state) do
+      {:ok, result, final_state} ->
+        case Agent.Verifier.verify(final_state) do
+          :ok ->
+            {:reply, {:ok, result}, final_state}
 
-    {:reply, result, state}
+          {:error, reason} ->
+            {:reply, {:error, reason}, final_state}
+        end
+
+
+      {:error, reason, final_state} ->
+        {:reply, {:error, reason}, final_state}
+    end
   end
 
   defp step(state) do
     state = trace(state, :model_call, %{messages: state.messages})
+
     case LLM.Mock.chat(state.messages) do
       {:reply, reply} ->
-        _state =
-          trace(state, :model_finished, %{
+        state =
+          state
+          |> trace(:model_finished, %{
             answer: reply
           })
-        {:ok, reply}
+          |> Map.put(:status, :finished)
+        {:ok, reply, state}
 
       {:tool_call, tool, args} ->
-        state = trace(state, :tool_requested, %{tool: tool, messages: state.messages})
+        state = trace(state, :tool_requested, %{tool: tool, arguments: args})
         run_tool(state, tool, args)
     end
   end
@@ -58,26 +73,20 @@ defmodule Agent.Loop do
   defp run_tool(state, tool, args) do
     case Tools.Registry.call(tool, args) do
       {:ok, result} ->
-        next_state = %{
-          state
-          | messages:
-              state.messages ++
-                [
-                  %{
-                    role: :tool,
-                    content: result
-                  }
-                ]
-        }
-        next_state =
-          trace(next_state, :tool_completed, %{
-            tool: tool,
-            result: result
-          })
-        step(next_state)
+        state = state
+        |> trace(:tool_completed, %{tool: tool, result: result})
+        |> append_tool_message(result)
+
+        step(state)
 
       {:error, reason} ->
-        {:error, reason}
+        state =
+        trace(state, :tool_failed, %{
+          tool: tool,
+          reason: reason
+        })
+
+        {:error, reason, state}
     end
   end
 
@@ -91,6 +100,18 @@ defmodule Agent.Loop do
             type,
             payload
           )
+    }
+  end
+
+  defp append_tool_message(state, result) do
+    tool_message = %{
+      role: :tool,
+      content: result
+    }
+
+    %{
+      state
+      | messages: state.messages ++ [tool_message]
     }
   end
 end
