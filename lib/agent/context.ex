@@ -19,6 +19,10 @@ defmodule Agent.Context do
     }
   end
 
+  def messages(context) do
+    context.messages
+  end
+
   def add_tool_result(context, result) do
     message = %{
       role: :tool,

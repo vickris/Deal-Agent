@@ -40,9 +40,9 @@ defmodule Agent.Loop do
   end
 
   defp step(state) do
-    state = State.trace(state, :model_call, %{context: state.context})
+    state = state |> State.increment_iteration() |> State.trace(:model_call, %{})
 
-    case LLM.Mock.chat(state.context.messages) do
+    case LLM.Mock.chat(Agent.Context.messages(state.context)) do
       {:reply, reply} ->
         state =
           state
@@ -64,7 +64,6 @@ defmodule Agent.Loop do
           state
           |> State.trace(:tool_completed, %{tool: tool, result: result})
           |> State.add_tool_result(result)
-          |> State.increment_iteration()
 
         step(state)
 
