@@ -40,8 +40,19 @@ defmodule Agent.Loop do
   end
 
   defp step(state) do
-    state = state |> State.increment_iteration() |> State.trace(:model_call, %{})
+    with :ok <- Agent.Guardrails.check(state) do
+        state
+        |> State.increment_iteration()
+        |> State.trace(:model_call, %{})
+        |> call_llm()
+    else
+      {:error, reason} ->
+        state = State.fail(state, reason)
+        {:error, reason, state}
+    end
+  end
 
+  defp call_llm(state) do
     case LLM.Mock.chat(Agent.Context.messages(state.context)) do
       {:reply, reply} ->
         state =

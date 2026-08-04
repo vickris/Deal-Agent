@@ -52,7 +52,10 @@ defmodule Agent.State do
   end
 
   def fail(state, reason) do
-    %{state | status: :failed, result: reason}
+    state
+    |> trace(:failed, %{reason: reason})
+    |> Map.put(:status, :failed)
+    |> Map.put(:result, reason)
   end
 
   defp update_context(state, fun) do
