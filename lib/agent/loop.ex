@@ -12,8 +12,8 @@ defmodule Agent.Loop do
   end
 
   @impl true
-  def init(_initial_state) do
-    {:ok, %State{}}
+  def init(llm) do
+    {:ok, %{llm: llm}}
   end
 
   def run(goal) do
@@ -21,10 +21,10 @@ defmodule Agent.Loop do
   end
 
   @impl true
-  def handle_call({:run, goal}, _from, _state) do
+  def handle_call({:run, goal}, _from, %{llm: llm} = _server_state) do
     state = State.new(goal)
 
-    case step(state) do
+    case step(state, llm) do
       {:ok, result, final_state} ->
         case Agent.Verifier.verify(final_state) do
           :ok ->
@@ -39,12 +39,12 @@ defmodule Agent.Loop do
     end
   end
 
-  defp step(state) do
+  defp step(state, llm) do
     with :ok <- Agent.Guardrails.check(state) do
         state
         |> State.increment_iteration()
         |> State.trace(:model_call, %{})
-        |> call_llm()
+        |> call_llm(llm)
     else
       {:error, reason} ->
         state = State.fail(state, reason)
@@ -52,8 +52,8 @@ defmodule Agent.Loop do
     end
   end
 
-  defp call_llm(state) do
-    case LLM.Mock.chat(Agent.Context.messages(state.context)) do
+  defp call_llm(state, {module, opts}) do
+    case module.chat(Agent.Context.messages(state.context), opts) do
       {:reply, reply} ->
         state =
           state
@@ -64,11 +64,11 @@ defmodule Agent.Loop do
 
       {:tool_call, tool, args} ->
         state = State.trace(state, :tool_requested, %{tool: tool, arguments: args})
-        run_tool(state, tool, args)
+        run_tool(state, tool, args, {module, opts})
     end
   end
 
-  defp run_tool(state, tool, args) do
+  defp run_tool(state, tool, args, llm) do
     case Tools.Registry.call(tool, args) do
       {:ok, result} ->
         state =
@@ -76,7 +76,7 @@ defmodule Agent.Loop do
           |> State.trace(:tool_completed, %{tool: tool, result: result})
           |> State.add_tool_result(result)
 
-        step(state)
+        step(state, llm)
 
       {:error, reason} ->
         state = State.trace(state, :tool_failed, %{tool: tool, reason: reason})
