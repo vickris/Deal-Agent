@@ -12,6 +12,7 @@ defmodule LLM.Mock do
     case mode do
       :normal ->
         normal(messages)
+
       :loop_forever ->
         loop_forever(messages)
 
@@ -20,11 +21,11 @@ defmodule LLM.Mock do
 
       :unknown_tool ->
         unknown_tool()
+
       mode ->
         raise ArgumentError, "unsupported mock LLM mode: #{inspect(mode)}"
     end
   end
-
 
   defp normal(messages) do
     case List.last(messages) do

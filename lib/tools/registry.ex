@@ -17,5 +17,4 @@ defmodule Tools.Registry do
         {:error, :unknown_tool}
     end
   end
-
 end

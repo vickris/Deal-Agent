@@ -20,6 +20,4 @@ defmodule Tools.Echo do
   end
 
   def execute(_), do: {:error, :invalid_input}
-
-
 end
