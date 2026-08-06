@@ -12,6 +12,5 @@ defmodule LLM.Client do
           {:reply, String.t()}
           | {:tool_call, atom(), map()}
 
-  @callback chat([message()]) :: response()
-
+  @callback chat([message()], keyword()) :: response()
 end

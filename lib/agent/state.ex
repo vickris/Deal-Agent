@@ -48,7 +48,10 @@ defmodule Agent.State do
   end
 
   def finish(state, result) do
-    %{state | status: :finished, result: result}
+    state
+    |> trace(:finished, %{result: result})
+    |> Map.put(:status, :finished)
+    |> Map.put(:result, result)
   end
 
   def fail(state, reason) do
