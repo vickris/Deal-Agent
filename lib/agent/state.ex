@@ -64,4 +64,8 @@ defmodule Agent.State do
   defp update_context(state, fun) do
     %{state | context: fun.(state.context)}
   end
+
+  def put_context(state, %Agent.Context{} = context) do
+    %{state | context: context}
+  end
 end
