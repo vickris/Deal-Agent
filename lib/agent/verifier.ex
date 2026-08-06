@@ -6,7 +6,8 @@ defmodule Agent.Verifier do
 
   alias Agent.State
 
-  @spec verify(State.t(), keyword()) :: :ok | {:error, term()}
+  @spec verify(%Agent.State{status: any()}, keyword()) ::
+          :ok | {:error, any()}
   def verify(%State{} = state, opts \\ []) do
     required_tools = Keyword.get(opts, :required_tools, [])
 
@@ -15,6 +16,8 @@ defmodule Agent.Verifier do
          :ok <- verify_result(state.result),
          :ok <- verify_required_tools(state.trace, required_tools) do
       :ok
+    else
+      {:error, reason} -> {:error, reason}
     end
   end
 
@@ -34,7 +37,7 @@ defmodule Agent.Verifier do
   defp verify_required_tools(trace, required_tools) do
     executed_tools =
       trace
-      |> Enum.filter(fn step -> step.type == :tool_executed end)
+      |> Enum.filter(fn step -> step.type == :tool_completed end)
       |> Enum.map(fn step -> step.payload.tool end)
 
     missing_tools = required_tools -- executed_tools

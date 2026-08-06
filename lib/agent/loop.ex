@@ -4,16 +4,27 @@ defmodule Agent.Loop do
   """
 
   use GenServer
+
+  alias Agent.Context
+  alias Agent.Guardrails
   alias Agent.State
+  alias Agent.Verifier
 
   def start_link(opts \\ []) do
     llm = Keyword.fetch!(opts, :llm)
-    GenServer.start_link(__MODULE__, llm, name: __MODULE__)
+    verification = Keyword.get(opts, :verification, [])
+
+    server_state = %{
+      llm: llm,
+      verification: verification
+    }
+
+    GenServer.start_link(__MODULE__, server_state, name: __MODULE__)
   end
 
   @impl true
-  def init(llm) do
-    {:ok, %{llm: llm}}
+  def init(server_state) do
+    {:ok, server_state}
   end
 
   def run(goal) do
@@ -21,30 +32,40 @@ defmodule Agent.Loop do
   end
 
   @impl true
-  def handle_call({:run, goal}, _from, %{llm: llm} = _server_state) do
-    state = State.new(goal)
+  def handle_call({:run, goal}, _from, %{llm: llm, verification: verification} = server_state) do
+    execution_state = State.new(goal)
 
-    case step(state, llm) do
-      {:ok, result, final_state} ->
-        case Agent.Verifier.verify(final_state) do
-          :ok ->
-            {:reply, {:ok, result}, final_state}
+    reply =
+      case step(execution_state, llm) do
+        {:ok, result, final_execution_state} ->
+          verify_result(result, final_execution_state, verification)
 
-          {:error, reason} ->
-            {:reply, {:error, reason}, final_state}
-        end
+        {:error, reason, final_execution_state} ->
+          {:error, reason, final_execution_state}
+      end
 
-      {:error, reason, final_state} ->
-        {:reply, {:error, reason}, final_state}
+    {:reply, reply, server_state}
+  end
+
+  defp verify_result(result, final_execution_state, verification) do
+    case Verifier.verify(final_execution_state, verification) do
+      :ok ->
+        {:ok, result, final_execution_state}
+
+      {:error, reason} ->
+        failed_state = State.fail(final_execution_state, reason)
+        {:error, reason, failed_state}
     end
   end
 
   defp step(state, llm) do
-    with :ok <- Agent.Guardrails.check(state) do
-        state
-        |> State.increment_iteration()
-        |> State.trace(:model_call, %{})
-        |> call_llm(llm)
+    with :ok <- Guardrails.check(state) do
+      state
+      |> State.increment_iteration()
+      |> State.trace(:model_call, %{
+        message_count: state.context |> Context.messages() |> length()
+      })
+      |> call_llm(llm)
     else
       {:error, reason} ->
         state = State.fail(state, reason)
@@ -52,11 +73,12 @@ defmodule Agent.Loop do
     end
   end
 
-  defp call_llm(state, {module, opts}) do
-    case module.chat(Agent.Context.messages(state.context), opts) do
+  defp call_llm(state, {module, opts} = llm) do
+    case module.chat(Context.messages(state.context), opts) do
       {:reply, reply} ->
         state =
           state
+          |> State.add_assistant_message(reply)
           |> State.trace(:model_finished, %{answer: reply})
           |> State.finish(reply)
 
@@ -64,7 +86,7 @@ defmodule Agent.Loop do
 
       {:tool_call, tool, args} ->
         state = State.trace(state, :tool_requested, %{tool: tool, arguments: args})
-        run_tool(state, tool, args, {module, opts})
+        run_tool(state, tool, args, llm)
     end
   end
 
@@ -79,8 +101,12 @@ defmodule Agent.Loop do
         step(state, llm)
 
       {:error, reason} ->
-        state = State.trace(state, :tool_failed, %{tool: tool, reason: reason})
-        {:error, reason, state}
+        failed_state =
+          state
+          |> State.trace(:tool_failed, %{tool: tool, reason: reason})
+          |> State.fail(reason)
+
+        {:error, reason, failed_state}
     end
   end
 end
