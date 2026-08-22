@@ -17,7 +17,8 @@ defmodule Agent.Guardrails do
 
   def check_before_tool(state, opts) do
     with :ok <- MaxExecutionTime.check(state, opts),
-         :ok <- MaxIterations.check(state, opts) do
+         :ok <- MaxIterations.check(state, opts),
+         :ok <- MaxToolCalls.check(state, opts) do
       :ok
     else
       error -> error

@@ -13,6 +13,9 @@ defmodule LLM.Mock do
       :normal ->
         normal(messages)
 
+      :slow_loop ->
+        slow_loop(messages, opts)
+
       :loop_forever ->
         loop_forever(messages)
 
@@ -25,6 +28,17 @@ defmodule LLM.Mock do
       mode ->
         raise ArgumentError, "unsupported mock LLM mode: #{inspect(mode)}"
     end
+  end
+
+  defp slow_loop(_messages, opts) do
+    milliseconds =
+      Keyword.get(
+        opts,
+        :sleep_ms,
+        20
+      )
+
+    {:tool_call, :sleep, %{milliseconds: milliseconds}}
   end
 
   defp normal(messages) do

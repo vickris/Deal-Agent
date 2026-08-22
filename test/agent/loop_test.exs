@@ -65,6 +65,81 @@ defmodule Agent.LoopTest do
            )
   end
 
+  test "stops execution when the tool-call budget is exhausted" do
+    start_supervised!({
+      Agent.Loop,
+      [
+        llm: {
+          LLM.Mock,
+          mode: :loop_forever
+        },
+        guardrails: [
+          max_iterations: 20,
+          max_tool_calls: 3,
+          max_context_messages: 6
+        ],
+        verification: [
+          required_tools: [:echo]
+        ]
+      ]
+    })
+
+    assert {:error, :max_tool_calls_reached, state} =
+             Agent.Loop.run("Run a slow tool")
+
+    assert state.status == :failed
+    assert state.tool_calls == 3
+
+    completed_tool_calls =
+      Enum.count(
+        state.trace,
+        &(&1.type == :tool_completed and
+            &1.payload.tool == :echo)
+      )
+
+    assert completed_tool_calls == 3
+  end
+
+  test "stops execution after the total time budget is exhausted" do
+    start_supervised!({
+      Agent.Loop,
+      [
+        llm: {
+          LLM.Mock,
+          [
+            mode: :slow_loop,
+            sleep_ms: 20
+          ]
+        },
+        guardrails: [
+          max_iterations: 20,
+          max_tool_calls: 20,
+          max_execution_time_ms: 35,
+          max_context_messages: 6
+        ],
+        verification: []
+      ]
+    })
+
+    assert {
+             :error,
+             {
+               :max_execution_time_reached,
+               details
+             },
+             state
+           } =
+             Agent.Loop.run("Run slowly")
+
+    assert state.status == :failed
+    assert details.elapsed_ms >= details.maximum_ms
+
+    assert Enum.any?(
+             state.trace,
+             &(&1.type == :failed)
+           )
+  end
+
   defp start_loop(mode) do
     Agent.Loop.start_link(
       llm: {LLM.Mock, mode: mode},

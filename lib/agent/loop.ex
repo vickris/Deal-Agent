@@ -157,11 +157,40 @@ defmodule Agent.Loop do
   end
 
   defp run_tool(state, tool, args, llm, guardrails) do
+    with :ok <- Guardrails.check_before_tool(state, guardrails) do
+      execute_tool(state, tool, args, llm, guardrails)
+    else
+      {:error, reason} ->
+        failed_state = State.fail(state, reason)
+        {:error, reason, failed_state}
+    end
+  end
+
+  defp execute_tool(state, tool, args, llm, guardrails) do
+    state =
+      state
+      |> State.increment_tool_calls()
+
+    state =
+      State.trace(
+        state,
+        :tool_started,
+        %{
+          tool: tool,
+          arguments: args,
+          tool_call_number: state.tool_calls + 1
+        }
+      )
+
     case Tools.Registry.call(tool, args) do
       {:ok, result} ->
         state =
           state
-          |> State.trace(:tool_completed, %{tool: tool, result: result})
+          |> State.trace(:tool_completed, %{
+            tool: tool,
+            result: result,
+            tool_call_number: state.tool_calls
+          })
           |> State.add_tool_result(result)
 
         step(state, llm, guardrails)
@@ -169,7 +198,11 @@ defmodule Agent.Loop do
       {:error, reason} ->
         failed_state =
           state
-          |> State.trace(:tool_failed, %{tool: tool, reason: reason})
+          |> State.trace(:tool_failed, %{
+            tool: tool,
+            reason: reason,
+            tool_call_number: state.tool_calls
+          })
           |> State.fail(reason)
 
         {:error, reason, failed_state}

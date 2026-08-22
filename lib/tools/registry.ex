@@ -3,9 +3,11 @@ defmodule Tools.Registry do
   Finds and executes registered tools.
   """
   alias Tools.Echo
+  alias Tools.Sleep
 
   @tools %{
-    echo: Echo
+    echo: Echo,
+    sleep: Sleep
   }
 
   def call(tool_name, args) do

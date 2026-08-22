@@ -9,11 +9,12 @@ defmodule Agent.Guardrails.MaxExecutionTime do
     max_execution_time_ms = Keyword.get(opts, :max_execution_time_ms, 30_000)
 
     if State.elapsed_ms(state) >= max_execution_time_ms do
-      {:error, :max_execution_time_reached,
-       %{
-         elapsed_ms: State.elapsed_ms(state),
-         max_execution_time_ms: max_execution_time_ms
-       }}
+      {:error,
+       {:max_execution_time_reached,
+        %{
+          elapsed_ms: State.elapsed_ms(state),
+          maximum_ms: max_execution_time_ms
+        }}}
     else
       :ok
     end
