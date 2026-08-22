@@ -65,9 +65,18 @@ defmodule Agent.Loop do
   end
 
   defp step(state, llm, guardrails) do
-    with :ok <- Guardrails.check_iterations(state, guardrails),
-         {:ok, state} <- prepare_context(state, guardrails),
-         :ok <- Guardrails.check_context(state, guardrails) do
+    case prepare_context(state, guardrails) do
+      {:ok, state} ->
+        run_checks(state, llm, guardrails)
+
+      {:error, reason, failed_state} ->
+        {:error, reason, failed_state}
+    end
+  end
+
+  defp run_checks(state, llm, guardrails) do
+    with :ok <- Guardrails.check_context(state, guardrails),
+         :ok <- Guardrails.check_iterations(state, guardrails) do
       state
       |> State.increment_iteration()
       |> State.trace(:model_call, %{
@@ -76,8 +85,8 @@ defmodule Agent.Loop do
       |> call_llm(llm, guardrails)
     else
       {:error, reason} ->
-        state = State.fail(state, reason)
-        {:error, reason, state}
+        failed_state = State.fail(state, reason)
+        {:error, reason, failed_state}
     end
   end
 
