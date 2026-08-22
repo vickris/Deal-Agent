@@ -7,9 +7,12 @@ defmodule Agent.State do
     :goal,
     :status,
     :iteration,
+    :tool_calls,
     :context,
     :trace,
-    :result
+    :result,
+    :started_at,
+    :started_at_monotonic
   ]
 
   def new(goal) do
@@ -17,8 +20,11 @@ defmodule Agent.State do
       goal: goal,
       status: :running,
       iteration: 0,
+      tool_calls: 0,
       context: Agent.Context.new(goal),
-      trace: []
+      trace: [],
+      started_at: DateTime.utc_now(),
+      started_at_monotonic: System.monotonic_time(:millisecond)
     }
   end
 
@@ -45,6 +51,14 @@ defmodule Agent.State do
 
   def increment_iteration(state) do
     %{state | iteration: state.iteration + 1}
+  end
+
+  def increment_tool_calls(state) do
+    %{state | tool_calls: state.tool_calls + 1}
+  end
+
+  def elapsed_ms(state) do
+    System.monotonic_time(:millisecond) - state.started_at_monotonic
   end
 
   def finish(state, result) do
