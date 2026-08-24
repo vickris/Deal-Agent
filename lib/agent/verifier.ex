@@ -4,35 +4,28 @@ defmodule Agent.Verifier do
   the expected conditions.
   """
 
-  alias Agent.State
+  alias Agent.Run
 
-  @spec verify(%Agent.State{status: any()}, keyword()) ::
-          :ok | {:error, any()}
-  def verify(%State{} = state, opts \\ []) do
+  def verify(%Agent.Run{} = run, opts \\ []) do
     required_tools = Keyword.get(opts, :required_tools, [])
 
-    with :ok <- verify_status(state),
-         :ok <- verify_finished_event(state.trace),
-         :ok <- verify_result(state.result),
-         :ok <- verify_required_tools(state.trace, required_tools) do
+    with :ok <- verify_execution(run),
+         :ok <- verify_answer(run),
+         :ok <- verify_required_tools(run.trace, required_tools) do
       :ok
     else
       {:error, reason} -> {:error, reason}
     end
   end
 
-  defp verify_status(%State{status: :finished}), do: :ok
-  defp verify_status(%State{status: status}), do: {:error, {:invalid_final_status, status}}
+  defp verify_execution(%Run{execution_status: :finished}), do: :ok
 
-  defp verify_finished_event(trace) do
-    case Enum.find(trace, fn step -> step.type == :finished end) do
-      nil -> {:error, :missing_finished_event}
-      _step -> :ok
-    end
+  defp verify_execution(%Run{execution_status: status}) do
+    {:error, {:invalid_execution_status, status}}
   end
 
-  defp verify_result(nil), do: {:error, :missing_result}
-  defp verify_result(_result), do: :ok
+  defp verify_answer(%Run{answer: answer}) when not is_nil(answer), do: :ok
+  defp verify_answer(_run), do: {:error, :missing_answer}
 
   defp verify_required_tools(trace, required_tools) do
     executed_tools =

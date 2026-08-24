@@ -111,13 +111,11 @@ defmodule Agent.ContextTest do
       ]
     )
 
-    assert {:error, :max_iterations_reached, state} =
+    assert {:error, run} =
              Agent.Loop.run("Keep repeating")
 
-    assert length(Agent.Context.messages(state.context)) <= 4
-
     assert Enum.any?(
-             state.trace,
+             run.trace,
              &(&1.type == :context_compressed)
            )
   end

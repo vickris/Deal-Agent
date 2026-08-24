@@ -8,7 +8,6 @@ defmodule Agent.Loop do
   alias Agent.Context
   alias Agent.Guardrails
   alias Agent.State
-  alias Agent.Verifier
 
   def start_link(opts \\ []) do
     llm = Keyword.fetch!(opts, :llm)
@@ -41,26 +40,40 @@ defmodule Agent.Loop do
       ) do
     execution_state = State.new(goal)
 
-    reply =
+    run =
       case step(execution_state, llm, guardrails) do
-        {:ok, result, final_execution_state} ->
-          verify_result(result, final_execution_state, verification)
+        {:ok, _result, final_execution_state} ->
+          build_verified_run(final_execution_state, verification)
 
         {:error, reason, final_execution_state} ->
-          {:error, reason, final_execution_state}
+          Agent.Run.Builder.execution_failed(
+            final_execution_state,
+            reason
+          )
       end
 
-    {:reply, reply, server_state}
+    {:reply, public_result(run), server_state}
   end
 
-  defp verify_result(result, final_execution_state, verification) do
-    case Verifier.verify(final_execution_state, verification) do
+  defp build_verified_run(
+         final_state,
+         verification
+       ) do
+    candidate =
+      Agent.Run.Builder.success(final_state)
+
+    case Agent.Verifier.verify(
+           candidate,
+           verification
+         ) do
       :ok ->
-        {:ok, result, final_execution_state}
+        candidate
 
       {:error, reason} ->
-        failed_state = State.fail(final_execution_state, reason)
-        {:error, reason, failed_state}
+        Agent.Run.Builder.verification_failed(
+          final_state,
+          reason
+        )
     end
   end
 
@@ -207,5 +220,18 @@ defmodule Agent.Loop do
 
         {:error, reason, failed_state}
     end
+  end
+
+  defp public_result(
+         %Agent.Run{
+           execution_status: :finished,
+           verification_status: :passed
+         } = run
+       ) do
+    {:ok, run}
+  end
+
+  defp public_result(%Agent.Run{} = run) do
+    {:error, run}
   end
 end

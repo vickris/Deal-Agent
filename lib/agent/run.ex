@@ -1,16 +1,30 @@
 defmodule Agent.Run do
   @moduledoc """
-  Represents a completed execution of an agent, including the goal, answer, status, trace, and timestamps.
+  Represents a completed outcome of a single agent execution.
   """
-  @enforce_keys [:goal, :status]
-  defstruct [
+  @enforce_keys [
     :goal,
-    :status,
-    :answer,
-    :trace,
+    :execution_status,
+    :verification_status,
     :iterations,
+    :tool_calls,
     :started_at,
     :finished_at,
-    :verification
+    :duration_ms,
+    :trace
+  ]
+  defstruct [
+    :goal,
+    :execution_status,
+    :verification_status,
+    :answer,
+    :error,
+    :iterations,
+    :tool_calls,
+    :started_at,
+    :finished_at,
+    :duration_ms,
+    :trace,
+    :verification_error
   ]
 end
