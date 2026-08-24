@@ -18,8 +18,8 @@ defmodule Agent.Run.Builder do
     build(state, execution_status: :failed, verification_status: :not_run, error: reason)
   end
 
-  defp build(%State{} = state) do
-    attributes = [
+  defp build(%State{} = state, overrides) do
+    defaults = [
       execution_status: state.status,
       verification_status: :not_run,
       answer: answer_from_state(state),
