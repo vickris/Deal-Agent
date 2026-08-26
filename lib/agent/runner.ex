@@ -1,80 +1,64 @@
-defmodule Agent.Loop do
+defmodule Agent.Runner do
   @moduledoc """
-  Implements the main loop for the agent.
+  Executes one isolated agent run
   """
 
   use GenServer
 
   alias Agent.Context
-  alias Agent.Guardrails
   alias Agent.State
+  alias Agent.Guardrails
 
-  def start_link(opts \\ []) do
-    llm = Keyword.fetch!(opts, :llm)
-    verification = Keyword.get(opts, :verification, [])
-    guardrails = Keyword.get(opts, :guardrails, [])
-
-    server_state = %{
-      llm: llm,
-      verification: verification,
-      guardrails: guardrails
-    }
-
-    GenServer.start_link(__MODULE__, server_state)
+  def start_link(opts) do
+    GenServer.start_link(
+      __MODULE__,
+      opts
+    )
   end
 
   @impl true
-  def init(server_state) do
-    {:ok, server_state}
+  def init(opts) do
+    goal = Keyword.fetch!(opts, :goal)
+    llm = Keyword.fetch!(opts, :llm)
+
+    state = %{
+      llm: llm,
+      verification: Keyword.get(opts, :verification, []),
+      guardrails: Keyword.get(opts, :guardrails, []),
+      execution: State.new(goal)
+    }
+
+    {:ok, state}
   end
 
-  def run(pid, goal) do
-    GenServer.call(pid, {:run, goal})
+  def run(pid) do
+    GenServer.call(
+      pid,
+      :run,
+      :infinity
+    )
   end
 
   @impl true
   def handle_call(
-        {:run, goal},
+        :run,
         _from,
-        %{llm: llm, verification: verification, guardrails: guardrails} = server_state
+        %{
+          execution: execution,
+          llm: llm,
+          guardrails: guardrails,
+          verification: verification
+        } = state
       ) do
-    execution_state = State.new(goal)
+    result =
+      execute(
+        execution,
+        llm,
+        guardrails,
+        verification
+      )
 
-    run =
-      case step(execution_state, llm, guardrails) do
-        {:ok, _result, final_execution_state} ->
-          build_verified_run(final_execution_state, verification)
-
-        {:error, reason, final_execution_state} ->
-          Agent.Run.Builder.execution_failed(
-            final_execution_state,
-            reason
-          )
-      end
-
-    {:reply, public_result(run), server_state}
-  end
-
-  defp build_verified_run(
-         final_state,
-         verification
-       ) do
-    candidate =
-      Agent.Run.Builder.success(final_state)
-
-    case Agent.Verifier.verify(
-           candidate,
-           verification
-         ) do
-      :ok ->
-        candidate
-
-      {:error, reason} ->
-        Agent.Run.Builder.verification_failed(
-          final_state,
-          reason
-        )
-    end
+    {:reply, result, state}
   end
 
   defp step(state, llm, guardrails) do
@@ -233,5 +217,58 @@ defmodule Agent.Loop do
 
   defp public_result(%Agent.Run{} = run) do
     {:error, run}
+  end
+
+  defp execute(
+         execution,
+         llm,
+         guardrails,
+         verification
+       ) do
+    case step(
+           execution,
+           llm,
+           guardrails
+         ) do
+      {:ok, _result, final_state} ->
+        final_state
+        |> build_verified_run(verification)
+        |> public_result()
+
+      {:error, reason, final_state} ->
+        final_state
+        |> Agent.Run.Builder.execution_failed(reason)
+        |> public_result()
+    end
+  end
+
+  defp build_verified_run(
+         final_state,
+         verification
+       ) do
+    candidate =
+      Agent.Run.Builder.success(final_state)
+
+    case Agent.Verifier.verify(
+           candidate,
+           verification
+         ) do
+      :ok ->
+        candidate
+
+      {:error, reason} ->
+        Agent.Run.Builder.verification_failed(
+          final_state,
+          reason
+        )
+    end
+  end
+
+  def child_spec(opts) do
+    %{
+      id: make_ref(),
+      start: {__MODULE__, :start_link, [opts]},
+      restart: :temporary
+    }
   end
 end

@@ -16,7 +16,7 @@ defmodule Handlers.SaveComparison do
     end
   end
 
-  defp save_comparison(data, context) do
+  defp save_comparison(data, _context) do
     # Implement the logic to save the comparison result here.
     # You can use the `data` and `context` to perform the necessary operations.
     # For example, you might want to store the data in a database or log it.

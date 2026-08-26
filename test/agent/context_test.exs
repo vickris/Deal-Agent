@@ -96,23 +96,22 @@ defmodule Agent.ContextTest do
   end
 
   test "compresses context during a long run" do
-    Agent.Loop.start_link(
-      llm: {
-        LLM.Mock,
-        mode: :loop_forever
-      },
-      guardrails: [
-        max_iterations: 6,
-        max_context_messages: 4,
-        summary_char_limit: 300
-      ],
-      verification: [
-        required_tools: [:echo]
-      ]
-    )
-
     assert {:error, run} =
-             Agent.Loop.run("Keep repeating")
+             Agent.API.run(
+               "Keep repeating",
+               llm: {
+                 LLM.Mock,
+                 mode: :loop_forever
+               },
+               guardrails: [
+                 max_iterations: 6,
+                 max_context_messages: 4,
+                 summary_char_limit: 300
+               ],
+               verification: [
+                 required_tools: [:echo]
+               ]
+             )
 
     assert Enum.any?(
              run.trace,

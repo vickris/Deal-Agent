@@ -9,7 +9,7 @@ defmodule DealAgent.Application do
   def start(_type, _args) do
     children = [
       # Starts a worker by calling: DealAgent.Worker.start_link(arg)
-      # {DealAgent.Worker, arg}
+      Agent.RunSupervisor
     ]
 
     # See https://hexdocs.pm/elixir/Supervisor.html
