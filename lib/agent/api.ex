@@ -3,20 +3,115 @@ defmodule Agent.API do
   Public API for executing agents.
   """
 
+  # Extra time given to the runner beyond its own `:max_execution_time_ms`
+  # guardrail before the API gives up on it. The guardrail is only checked
+  # between steps/tool calls, so a run can overshoot it by roughly one
+  # step's duration before the runner notices and replies on its own; this
+  # grace period lets that graceful `:max_execution_time_reached` failure
+  # win the race. The receive timeout below is a backstop for a runner
+  # that is genuinely stuck, not the primary enforcement mechanism.
+  @timeout_grace_ms 1_000
+
   def run(goal, opts) do
-    opts =
-      Keyword.put(
-        opts,
-        :goal,
-        goal
-      )
+    timeout =
+      opts
+      |> Keyword.get(:guardrails, [])
+      |> Keyword.get(:max_execution_time_ms, 30_000)
+
+    opts = Keyword.put(opts, :goal, goal)
 
     with {:ok, pid} <-
            Agent.RunSupervisor.start_run(opts) do
-      Agent.Runner.run(pid)
+      monitor_ref = Process.monitor(pid)
+      Agent.Runner.run(pid, self())
+
+      await_run(
+        pid,
+        monitor_ref,
+        goal,
+        timeout + @timeout_grace_ms
+      )
     else
       {:error, reason} ->
         IO.puts("Could not start run due to this error: #{inspect(reason)}")
     end
+  end
+
+  defp await_run(
+         pid,
+         monitor_ref,
+         goal,
+         timeout
+       ) do
+    receive do
+      {:agent_run_finished, ^pid, result} ->
+        Process.demonitor(
+          monitor_ref,
+          [:flush]
+        )
+
+        result
+
+      {:DOWN, ^monitor_ref, :process, ^pid, reason} ->
+        crash_result(
+          goal,
+          reason
+        )
+    after
+      timeout ->
+        timeout_result(
+          pid,
+          monitor_ref,
+          goal,
+          timeout
+        )
+    end
+  end
+
+  defp timeout_result(
+         pid,
+         monitor_ref,
+         goal,
+         timeout
+       ) do
+    terminate_runner(pid)
+
+    receive do
+      {:DOWN, ^monitor_ref, :process, ^pid, _reason} ->
+        :ok
+    after
+      100 ->
+        Process.demonitor(
+          monitor_ref,
+          [:flush]
+        )
+    end
+
+    {:error,
+     Agent.Run.timeout(
+       goal,
+       timeout
+     )}
+  end
+
+  defp terminate_runner(pid) do
+    case DynamicSupervisor.terminate_child(
+           Agent.RunSupervisor,
+           pid
+         ) do
+      :ok ->
+        :ok
+
+      {:error, :not_found} ->
+        :ok
+    end
+  end
+
+  defp crash_result(goal, reason) do
+    {:error,
+     Agent.Run.crash(
+       goal,
+       reason
+     )}
   end
 end

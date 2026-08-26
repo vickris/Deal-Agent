@@ -31,18 +31,16 @@ defmodule Agent.Runner do
     {:ok, state}
   end
 
-  def run(pid) do
-    GenServer.call(
+  def run(pid, caller) do
+    GenServer.cast(
       pid,
-      :run,
-      :infinity
+      {:run, caller}
     )
   end
 
   @impl true
-  def handle_call(
-        :run,
-        _from,
+  def handle_cast(
+        {:run, caller},
         %{
           execution: execution,
           llm: llm,
@@ -58,7 +56,9 @@ defmodule Agent.Runner do
         verification
       )
 
-    {:reply, result, state}
+    send(caller, {:agent_run_finished, self(), result})
+
+    {:stop, :normal, state}
   end
 
   defp step(state, llm, guardrails) do

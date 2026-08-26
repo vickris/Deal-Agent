@@ -82,4 +82,72 @@ defmodule Agent.APITest do
     assert run.verification_status == :not_run
     assert {:max_execution_time_reached, _time_ms} = run.error
   end
+
+  test "a crashing tool only crashes its own runner" do
+    assert {:error, run} =
+             Agent.API.run(
+               "Crash",
+               llm: {
+                 LLM.Mock,
+                 mode: :crash_tool
+               },
+               guardrails: [
+                 max_execution_time_ms: 1_000
+               ]
+             )
+
+    assert run.execution_status == :failed
+
+    assert {
+             :runner_crashed,
+             _reason
+           } = run.error
+
+    assert {:ok, next_run} =
+             Agent.API.run(
+               "Hello",
+               llm: {
+                 LLM.Mock,
+                 mode: :normal
+               },
+               verification: [
+                 required_tools: [:echo]
+               ]
+             )
+
+    assert next_run.answer == "Done!"
+  end
+
+  test "hard timeout terminates a blocked runner" do
+    started_at =
+      System.monotonic_time(:millisecond)
+
+    assert {:error, run} =
+             Agent.API.run(
+               "Sleep forever",
+               llm: {
+                 LLM.Mock,
+                 [
+                   mode: :slow_loop,
+                   sleep_ms: 5_000
+                 ]
+               },
+               guardrails: [
+                 max_execution_time_ms: 50,
+                 max_iterations: 100,
+                 max_tool_calls: 100
+               ]
+             )
+
+    elapsed =
+      System.monotonic_time(:millisecond) -
+        started_at
+
+    assert run.error ==
+             {:execution_timeout, 1050}
+
+    assert run.execution_status == :failed
+
+    assert elapsed < 1_000
+  end
 end

@@ -25,6 +25,9 @@ defmodule LLM.Mock do
       :unknown_tool ->
         unknown_tool()
 
+      :crash_tool ->
+        {:tool_call, :crash, %{}}
+
       mode ->
         raise ArgumentError, "unsupported mock LLM mode: #{inspect(mode)}"
     end

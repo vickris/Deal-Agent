@@ -7,7 +7,8 @@ defmodule Tools.Registry do
 
   @tools %{
     echo: Echo,
-    sleep: Sleep
+    sleep: Sleep,
+    crash: Tools.Crash
   }
 
   def call(tool_name, args) do
